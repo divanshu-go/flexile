@@ -10,7 +10,9 @@ class DividendReportCsvEmailJob
     dividend_rounds = DividendRound.includes(:dividends, :company, dividends: [:dividend_payments, company_investor: :user])
                                    .joins(:dividends)
                                    .merge(Dividend.paid)
-                                   .where("dividend_rounds.issued_at > ?", Time.current.last_month.beginning_of_month)
+                                   .where("dividend_rounds.issued_at >= ? AND dividend_rounds.issued_at <= ?",
+                                          Time.current.last_month.beginning_of_month,
+                                          Time.current.last_month.end_of_month)
                                    .distinct
                                    .order(issued_at: :asc)
 
