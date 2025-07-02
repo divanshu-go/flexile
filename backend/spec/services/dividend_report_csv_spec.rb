@@ -23,6 +23,7 @@ RSpec.describe DividendReportCsv do
       csv = described_class.new([dividend_round]).generate
       expect(csv).to include("Test Company")
       expect(csv).to include("100.0")
+      expect(csv).to include("3.2")
     end
   end
 end
