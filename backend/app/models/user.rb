@@ -206,7 +206,7 @@ class User < ApplicationRecord
   end
 
   def should_regenerate_consulting_contract?(changeset)
-    CONSULTING_CONTRACT_ATTRIBUTES.any? do |attr|
+    !contract_signed_elsewhere? && CONSULTING_CONTRACT_ATTRIBUTES.any? do |attr|
       changeset[attr].present? && send(attr) != changeset[attr]
     end
   end
