@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Api::Helper::BaseController < Api::BaseController
+  skip_before_action :verify_api_token
   before_action :authorize!
 
   HMAC_EXPIRATION = 1.minute
