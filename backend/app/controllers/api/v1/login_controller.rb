@@ -4,14 +4,30 @@ class Api::V1::LoginController < Api::BaseController
 
   def create
     email = params[:email]
+    otp_code = params[:otp_code]
 
     if email.blank?
       return render json: { error: "Email is required" }, status: :bad_request
     end
 
+    if otp_code.blank?
+      return render json: { error: "OTP code is required" }, status: :bad_request
+    end
+
     user = User.find_by(email: email)
     unless user
       return render json: { error: "User not found" }, status: :not_found
+    end
+
+    if user.otp_rate_limited?
+      return render json: {
+        error: "Too many OTP attempts. Please wait before trying again.",
+        retry_after: 10.minutes.to_i
+      }, status: :too_many_requests
+    end
+
+    unless user.verify_otp(otp_code)
+      return render json: { error: "Invalid or expired OTP code" }, status: :unauthorized
     end
 
     jwt_token = generate_jwt_token(user)

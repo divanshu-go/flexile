@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_06_23_190844) do
+ActiveRecord::Schema[8.0].define(version: 2025_07_07_204710) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -799,6 +799,14 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_23_190844) do
     t.index ["user_id"], name: "index_invoices_on_user_id"
   end
 
+  create_table "jwt_denylists", force: :cascade do |t|
+    t.string "jti"
+    t.datetime "exp"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["jti"], name: "index_jwt_denylists_on_jti"
+  end
+
   create_table "option_pools", force: :cascade do |t|
     t.bigint "company_id", null: false
     t.string "name", null: false
@@ -1028,6 +1036,9 @@ ActiveRecord::Schema[8.0].define(version: 2025_06_23_190844) do
     t.boolean "team_member", default: false, null: false
     t.boolean "sent_invalid_tax_id_email", default: false, null: false
     t.string "clerk_id"
+    t.string "otp_secret_key"
+    t.integer "otp_failed_attempts_count", default: 0, null: false
+    t.datetime "otp_first_failed_at"
     t.index ["clerk_id"], name: "index_users_on_clerk_id", unique: true
     t.index ["confirmation_token"], name: "index_users_on_confirmation_token", unique: true
     t.index ["email"], name: "index_users_on_email", unique: true
