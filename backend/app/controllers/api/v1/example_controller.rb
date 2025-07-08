@@ -8,8 +8,8 @@ class Api::V1::ExampleController < Api::BaseController
       user: {
         id: Current.user.id,
         email: Current.user.email,
-        name: Current.user.name
-      }
+        name: Current.user.name,
+      },
     }
   end
 end

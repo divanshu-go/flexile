@@ -23,7 +23,7 @@ class Api::V1::LoginController < Api::BaseController
     if user.otp_rate_limited?
       return render json: {
         error: "Too many OTP attempts. Please wait before trying again.",
-        retry_after: 10.minutes.to_i
+        retry_after: 10.minutes.to_i,
       }, status: :too_many_requests
     end
 
@@ -36,28 +36,27 @@ class Api::V1::LoginController < Api::BaseController
   end
 
   private
+    def generate_jwt_token(user)
+      payload = {
+        user_id: user.id,
+        email: user.email,
+        exp: 24.hours.from_now.to_i,
+      }
 
-  def generate_jwt_token(user)
-    payload = {
-      user_id: user.id,
-      email: user.email,
-      exp: 24.hours.from_now.to_i
-    }
+      JWT.encode(payload, jwt_secret, "HS256")
+    end
 
-    JWT.encode(payload, jwt_secret, 'HS256')
-  end
+    def jwt_secret
+      GlobalConfig.get("JWT_SECRET", Rails.application.secret_key_base)
+    end
 
-  def jwt_secret
-    GlobalConfig.get('JWT_SECRET', Rails.application.secret_key_base)
-  end
-
-  def user_data(user)
-    {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      legal_name: user.legal_name,
-      preferred_name: user.preferred_name
-    }
-  end
+    def user_data(user)
+      {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        legal_name: user.legal_name,
+        preferred_name: user.preferred_name,
+      }
+    end
 end

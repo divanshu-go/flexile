@@ -45,33 +45,32 @@ module User::OtpAuthentication
   end
 
   private
-
-  def generate_otp_secret_key
-    self.otp_secret_key = ROTP::Base32.random if otp_secret_key.blank?
-  end
-
-  def otp_code_valid?(code)
-    return false if code.blank? || otp_secret_key.blank?
-    self.authenticate_otp(code.to_s, drift: OTP_DRIFT)
-  end
-
-  def record_otp_failure!
-    if otp_first_failed_at.blank?
-      # First failure in this window
-      update!(
-        otp_first_failed_at: Time.current,
-        otp_failed_attempts_count: 1
-      )
-    else
-      # Additional failure in the same window
-      increment!(:otp_failed_attempts_count)
+    def generate_otp_secret_key
+      self.otp_secret_key = ROTP::Base32.random if otp_secret_key.blank?
     end
-  end
 
-  def reset_otp_failure_tracking!
-    update!(
-      otp_first_failed_at: nil,
-      otp_failed_attempts_count: 0
-    ) if otp_first_failed_at.present? || otp_failed_attempts_count > 0
-  end
+    def otp_code_valid?(code)
+      return false if code.blank? || otp_secret_key.blank?
+      self.authenticate_otp(code.to_s, drift: OTP_DRIFT)
+    end
+
+    def record_otp_failure!
+      if otp_first_failed_at.blank?
+        # First failure in this window
+        update!(
+          otp_first_failed_at: Time.current,
+          otp_failed_attempts_count: 1
+        )
+      else
+        # Additional failure in the same window
+        increment!(:otp_failed_attempts_count)
+      end
+    end
+
+    def reset_otp_failure_tracking!
+      update!(
+        otp_first_failed_at: nil,
+        otp_failed_attempts_count: 0
+      ) if otp_first_failed_at.present? || otp_failed_attempts_count > 0
+    end
 end
