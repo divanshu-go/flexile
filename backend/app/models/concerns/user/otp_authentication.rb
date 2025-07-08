@@ -46,7 +46,7 @@ module User::OtpAuthentication
 
   private
     def generate_otp_secret_key
-      self.otp_secret_key = ROTP::Base32.random if otp_secret_key.blank?
+      self.otp_secret_key = User.otp_random_secret if otp_secret_key.blank?
     end
 
     def otp_code_valid?(code)
