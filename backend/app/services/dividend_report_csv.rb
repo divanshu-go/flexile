@@ -63,7 +63,7 @@ end
 ### Usage:
 =begin
 dividend_rounds = DividendRound.includes(:dividends, :company, dividends: [:dividend_payments, company_investor: :user])
-                               .where("issued_at > ?", Time.current.last_month.beginning_of_month)
+                               .where("issued_at >= ? AND issued_at <= ?", Time.current.last_month.beginning_of_month, Time.current.last_month.end_of_month)
                                .order(issued_at: :asc)
 attached = { "DividendReport.csv" => DividendReportCsv.new(dividend_rounds).generate }
 AdminMailer.custom(to: ["solson@earlygrowth.com"], subject: "Flexile Dividend Report CSV", body: "Attached", attached:).deliver_now
