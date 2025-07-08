@@ -2,8 +2,6 @@
 
 # Example controller demonstrating JWT authentication usage
 class Api::V1::ExampleController < Api::BaseController
-  include JwtAuthenticatable
-
   def protected_action
     render json: {
       message: "This is a protected endpoint",

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class Api::V1::LoginController < Api::BaseController
+  skip_before_action :authenticate_with_jwt
 
   def create
     email = params[:email]

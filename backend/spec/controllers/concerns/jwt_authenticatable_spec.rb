@@ -3,7 +3,7 @@
 require 'spec_helper'
 
 RSpec.describe JwtAuthenticatable, type: :controller do
-      controller(ActionController::Base) do
+  controller(ActionController::Base) do
     include JwtAuthenticatable
 
     def test_action

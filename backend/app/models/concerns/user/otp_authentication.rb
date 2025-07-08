@@ -44,15 +44,6 @@ module User::OtpAuthentication
     otp_failed_attempts_count >= MAX_OTP_ATTEMPTS
   end
 
-  def recent_attempts_count
-    return 0 unless otp_first_failed_at.present?
-
-    time_since_first_failure = Time.current - otp_first_failed_at
-    return 0 if time_since_first_failure > OTP_ATTEMPT_WINDOW
-
-    otp_failed_attempts_count
-  end
-
   private
 
   def generate_otp_secret_key

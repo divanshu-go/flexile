@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Api::BaseController < ActionController::Base
+  include JwtAuthenticatable
+
   protect_from_forgery with: :null_session
   before_action :set_paper_trail_whodunnit
   before_action :verify_api_token
