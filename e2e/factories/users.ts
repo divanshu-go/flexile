@@ -17,7 +17,7 @@ export const usersFactory = {
     const [user] = await db
       .insert(users)
       .values({
-        email: faker.internet.email().toLowerCase(),
+        email: `${faker.internet.email().split("@")[0]}+clerk_test@example.com`.toLowerCase(),
         legalName: faker.person.fullName(),
         preferredName: faker.person.firstName(),
         encryptedPassword: await bcrypt.hash("password", 10),
@@ -25,6 +25,8 @@ export const usersFactory = {
         invitationAcceptedAt: new Date(),
         currentSignInIp: faker.internet.ipv4(),
         lastSignInIp: faker.internet.ipv4(),
+        currentSignInAt: new Date(),
+        lastSignInAt: new Date(),
         streetAddress: "1st Street",
         city: "New York",
         state: "NY",
