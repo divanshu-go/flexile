@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpTrayIcon, PlusIcon } from "@heroicons/react/16/solid";
-import { PaperAirplaneIcon, PaperClipIcon, TrashIcon } from "@heroicons/react/24/outline";
+import { PaperAirplaneIcon, TrashIcon } from "@heroicons/react/24/outline";
 import { type DateValue, parseDate } from "@internationalized/date";
 import { useMutation, useSuspenseQuery } from "@tanstack/react-query";
 import { List } from "immutable";
@@ -9,9 +9,8 @@ import { CircleAlert } from "lucide-react";
 import Link from "next/link";
 import { redirect, useParams, useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect, useId, useRef, useState } from "react";
-import { z } from "zod";
-import ComboBox from "@/components/ComboBox";
 import DatePicker from "@/components/DatePicker";
+import ExpenseTable from "@/components/invoices/ExpenseTable";
 import MainLayout from "@/components/layouts/Main";
 import NumberInput from "@/components/NumberInput";
 import RangeInput from "@/components/RangeInput";
@@ -25,9 +24,19 @@ import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, Table
 import { Textarea } from "@/components/ui/textarea";
 import { useCurrentCompany } from "@/global";
 import { MAX_EQUITY_PERCENTAGE } from "@/models";
+import { dataSchema } from "@/schemas/invoice";
 import { trpc } from "@/trpc/client";
+import { type InvoiceFormExpense, type InvoiceFormLineItem } from "@/types/invoice";
 import { assertDefined } from "@/utils/assert";
 import { formatMoneyFromCents } from "@/utils/formatMoney";
+import {
+  DEFAULT_PAY_RATE,
+  DEFAULT_PROJECT_QUANTITY,
+  DEFAULT_QUANTITY,
+  lineItemTotal,
+  updateExpense as updateExpenseHelper,
+  updateLineItem as updateLineItemHelper,
+} from "@/utils/invoiceForm";
 import { request } from "@/utils/request";
 import {
   company_invoice_path,
@@ -37,64 +46,6 @@ import {
 } from "@/utils/routes";
 import QuantityInput from "./QuantityInput";
 import { LegacyAddress as Address, useCanSubmitInvoices } from ".";
-
-const addressSchema = z.object({
-  street_address: z.string(),
-  city: z.string(),
-  zip_code: z.string(),
-  state: z.string().nullable(),
-  country: z.string(),
-  country_code: z.string(),
-});
-
-const dataSchema = z.object({
-  user: z.object({
-    legal_name: z.string(),
-    business_entity: z.boolean(),
-    billing_entity_name: z.string(),
-    pay_rate_in_subunits: z.number().nullable(),
-    project_based: z.boolean(),
-  }),
-  company: z.object({
-    id: z.string(),
-    name: z.string(),
-    address: addressSchema,
-    expenses: z.object({ enabled: z.boolean(), categories: z.array(z.object({ id: z.number(), name: z.string() })) }),
-  }),
-  invoice: z.object({
-    id: z.string().optional(),
-    bill_address: addressSchema,
-    invoice_date: z.string(),
-    description: z.string().nullable(),
-    invoice_number: z.string(),
-    notes: z.string().nullable(),
-    status: z.enum(["received", "approved", "processing", "payment_pending", "paid", "rejected", "failed"]).nullable(),
-    line_items: z.array(
-      z.object({
-        id: z.number().optional(),
-        description: z.string(),
-        quantity: z.number().nullable(),
-        hourly: z.boolean(),
-        pay_rate_in_subunits: z.number(),
-      }),
-    ),
-    equity_amount_in_cents: z.number(),
-    expenses: z.array(
-      z.object({
-        id: z.string().optional(),
-        description: z.string(),
-        category_id: z.number(),
-        total_amount_in_cents: z.number(),
-        attachment: z.object({ name: z.string(), url: z.string() }),
-      }),
-    ),
-  }),
-  equity_allocation: z.object({ percentage: z.number().nullable(), is_locked: z.boolean().nullable() }).optional(),
-});
-type Data = z.infer<typeof dataSchema>;
-
-type InvoiceFormLineItem = Data["invoice"]["line_items"][number] & { errors?: string[] | null };
-type InvoiceFormExpense = Data["invoice"]["expenses"][number] & { errors?: string[] | null; blob?: File | null };
 
 const Edit = () => {
   const company = useCurrentCompany();
@@ -128,20 +79,22 @@ const Edit = () => {
   const invoiceYear = issueDate.year;
   const [notes, setNotes] = useState(data.invoice.notes ?? "");
   const [lineItems, setLineItems] = useState<List<InvoiceFormLineItem>>(() => {
-    if (data.invoice.line_items.length) return List(data.invoice.line_items);
+    if (data.invoice.line_items.length) return List<InvoiceFormLineItem>(data.invoice.line_items);
 
-    return List([
+    return List<InvoiceFormLineItem>([
       {
         description: "",
         quantity: parseInt(searchParams.get("quantity") ?? "", 10) || (data.user.project_based ? 1 : 60),
         hourly: searchParams.has("hourly") ? searchParams.get("hourly") === "true" : !data.user.project_based,
         pay_rate_in_subunits: parseInt(searchParams.get("rate") ?? "", 10) || (payRateInSubunits ?? 0),
+        errors: undefined,
+        id: undefined,
       },
     ]);
   });
   const [showExpenses, setShowExpenses] = useState(false);
   const uploadExpenseRef = useRef<HTMLInputElement>(null);
-  const [expenses, setExpenses] = useState(List<InvoiceFormExpense>(data.invoice.expenses));
+  const [expenses, setExpenses] = useState<List<InvoiceFormExpense>>(List<InvoiceFormExpense>(data.invoice.expenses));
   const showExpensesTable = showExpenses || expenses.size > 0;
 
   const [equityAllocation, { refetch: refetchEquityAllocation }] = trpc.equityAllocations.get.useSuspenseQuery({
@@ -207,36 +160,39 @@ const Edit = () => {
     },
   });
 
-  const addLineItem = () =>
-    setLineItems((lineItems) =>
-      lineItems.push({
-        description: "",
-        quantity: data.user.project_based ? 1 : 60,
-        hourly: !data.user.project_based,
-        pay_rate_in_subunits: payRateInSubunits ?? 0,
-      }),
-    );
-
-  const createNewExpenseEntries = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    const expenseCategory = assertDefined(data.company.expenses.categories[0]);
-    setShowExpenses(true);
-    setExpenses((expenses) =>
-      expenses.push(
-        ...[...files].map((file) => ({
+  const addLineItem = React.useCallback(
+    () =>
+      setLineItems((lineItems) =>
+        lineItems.push({
           description: "",
-          category_id: expenseCategory.id,
-          total_amount_in_cents: 0,
-          attachment: { name: file.name, url: URL.createObjectURL(file) },
-          blob: file,
-        })),
+          quantity: data.user.project_based ? DEFAULT_PROJECT_QUANTITY : DEFAULT_QUANTITY,
+          hourly: !data.user.project_based,
+          pay_rate_in_subunits: payRateInSubunits ?? DEFAULT_PAY_RATE,
+          errors: undefined,
+          id: undefined,
+        }),
       ),
-    );
-  };
+    [data.user.project_based, payRateInSubunits],
+  );
 
-  const lineItemTotal = (lineItem: InvoiceFormLineItem) =>
-    Math.ceil(((lineItem.quantity ?? 0) / (lineItem.hourly ? 60 : 1)) * lineItem.pay_rate_in_subunits);
+  const updateLineItem = React.useCallback(
+    (index: number, update: Partial<InvoiceFormLineItem>) =>
+      setLineItems((lineItems) => updateLineItemHelper(lineItems, index, update)),
+    [],
+  );
+
+  const updateExpense = React.useCallback(
+    (index: number, update: Partial<InvoiceFormExpense>) =>
+      setExpenses((expenses) => updateExpenseHelper(expenses, index, update)),
+    [],
+  );
+
+  const removeExpense = React.useCallback((index: number) => setExpenses((expenses) => expenses.delete(index)), []);
+
+  useEffect(() => {
+    setEquityPercent(equityAllocation?.equityPercentage ?? 0);
+  }, [equityAllocation]);
+
   const totalExpensesAmountInCents = expenses.reduce((acc, expense) => acc + expense.total_amount_in_cents, 0);
   const totalServicesAmountInCents = lineItems.reduce((acc, lineItem) => acc + lineItemTotal(lineItem), 0);
   const totalInvoiceAmountInCents = totalServicesAmountInCents + totalExpensesAmountInCents;
@@ -246,31 +202,6 @@ const Edit = () => {
     invoiceYear,
     selectedPercentage: equityPercentage,
   });
-  const updateLineItem = (index: number, update: Partial<InvoiceFormLineItem>) =>
-    setLineItems((lineItems) =>
-      lineItems.update(index, (lineItem) => {
-        const updated = { ...assertDefined(lineItem), ...update };
-        updated.errors = [];
-        if (updated.description.length === 0) updated.errors.push("description");
-        if (!updated.quantity || updated.quantity <= 0) updated.errors.push("quantity");
-        return updated;
-      }),
-    );
-  const updateExpense = (index: number, update: Partial<InvoiceFormExpense>) =>
-    setExpenses((expenses) =>
-      expenses.update(index, (expense) => {
-        const updated = { ...assertDefined(expense), ...update };
-        updated.errors = [];
-        if (updated.description.length === 0) updated.errors.push("description");
-        if (!updated.category_id) updated.errors.push("category");
-        if (!updated.total_amount_in_cents) updated.errors.push("amount");
-        return updated;
-      }),
-    );
-
-  useEffect(() => {
-    setEquityPercent(equityAllocation?.equityPercentage ?? 0);
-  }, [equityAllocation]);
 
   return (
     <MainLayout
@@ -453,85 +384,36 @@ const Edit = () => {
               className="hidden"
               accept="application/pdf, image/*"
               multiple
-              onChange={createNewExpenseEntries}
+              onChange={(e) => {
+                const files = e.target.files;
+                if (!files) return;
+                const expenseCategory = assertDefined(data.company.expenses.categories[0]);
+                setShowExpenses(true);
+                setExpenses((expenses) =>
+                  expenses.push(
+                    ...[...files].map((file) => ({
+                      description: "",
+                      category_id: expenseCategory.id,
+                      total_amount_in_cents: 0,
+                      attachment: { name: file.name, url: URL.createObjectURL(file) },
+                      blob: file,
+                      errors: undefined,
+                      id: undefined,
+                    })),
+                  ),
+                );
+              }}
             />
           ) : null}
           {showExpensesTable ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Expense</TableHead>
-                  <TableHead>Merchant</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {expenses.toArray().map((expense, rowIndex) => (
-                  <TableRow key={rowIndex}>
-                    <TableCell>
-                      <a href={expense.attachment.url} download>
-                        <PaperClipIcon className="inline size-4" />
-                        {expense.attachment.name}
-                      </a>
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={expense.description}
-                        aria-label="Merchant"
-                        aria-invalid={expense.errors?.includes("description")}
-                        onChange={(e) => updateExpense(rowIndex, { description: e.target.value })}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <ComboBox
-                        value={expense.category_id.toString()}
-                        options={data.company.expenses.categories.map((category) => ({
-                          value: category.id.toString(),
-                          label: category.name,
-                        }))}
-                        aria-label="Category"
-                        aria-invalid={expense.errors?.includes("category")}
-                        onChange={(value) => updateExpense(rowIndex, { category_id: Number(value) })}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      <NumberInput
-                        value={expense.total_amount_in_cents / 100}
-                        placeholder="0"
-                        onChange={(value: number | null) =>
-                          updateExpense(rowIndex, { total_amount_in_cents: (value ?? 0) * 100 })
-                        }
-                        aria-label="Amount"
-                        aria-invalid={expense.errors?.includes("amount") ?? false}
-                        prefix="$"
-                        decimal
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="link"
-                        aria-label="Remove"
-                        onClick={() => setExpenses((expenses) => expenses.delete(rowIndex))}
-                      >
-                        <TrashIcon className="size-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-              <TableFooter>
-                <TableRow>
-                  <TableCell colSpan={5}>
-                    <Button variant="link" onClick={() => uploadExpenseRef.current?.click()}>
-                      <PlusIcon className="inline size-4" />
-                      Add expense
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              </TableFooter>
-            </Table>
+            <ExpenseTable
+              expenses={expenses.toArray()}
+              updateExpense={updateExpense}
+              removeExpense={removeExpense}
+              data={data}
+              showExpensesTable={showExpensesTable}
+              onAddExpense={() => uploadExpenseRef.current?.click()}
+            />
           ) : null}
 
           <footer className="flex flex-col gap-3 lg:flex-row lg:justify-between">
