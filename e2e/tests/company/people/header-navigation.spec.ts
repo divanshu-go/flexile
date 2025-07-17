@@ -11,36 +11,33 @@ import { shareClassesFactory } from "@test/factories/shareClasses";
 import { shareHoldingsFactory } from "@test/factories/shareHoldings";
 import { usersFactory } from "@test/factories/users";
 import { login } from "@test/helpers/auth";
-import { expect, test } from "@test/index";
-import type { companies, companyInvestors, users } from "@/db/schema";
+import { expect, type Page, test } from "@test/index";
 
 test.describe("People header navigation", () => {
-  let company: typeof companies.$inferSelect;
-  let companyAdmin: typeof users.$inferSelect;
-  let companyInvestor: typeof companyInvestors.$inferSelect;
-  let expectedTabs: { name: string; href: string }[];
+  const expectedTabs = [
+    { name: "Shares", href: "shares" },
+    { name: "Exercises", href: "exercises" },
+    { name: "Dividends", href: "dividends" },
+    { name: "Convertibles", href: "convertibles" },
+    { name: "Options", href: "options" },
+  ];
 
-  test.beforeEach(async () => {
-    const onboarding = await companiesFactory.createCompletedOnboarding({
+  const setup = async () => {
+    const { company, adminUser } = await companiesFactory.createCompletedOnboarding({
       tenderOffersEnabled: true,
       capTableEnabled: true,
       equityGrantsEnabled: true,
     });
-    company = onboarding.company;
-    companyAdmin = onboarding.adminUser;
 
     await companyContractorsFactory.create({
       companyId: company.id,
-      userId: companyAdmin.id,
-      externalId: companyAdmin.externalId,
+      userId: adminUser.id,
     });
 
-    const investor = await companyInvestorsFactory.create({
+    const { companyInvestor } = await companyInvestorsFactory.create({
       companyId: company.id,
-      userId: companyAdmin.id,
-      externalId: companyAdmin.externalId,
+      userId: adminUser.id,
     });
-    companyInvestor = investor.companyInvestor;
 
     await documentsFactory.create({ companyId: company.id });
     const shareClass = (await shareClassesFactory.create({ companyId: company.id })).shareClass;
@@ -49,37 +46,31 @@ test.describe("People header navigation", () => {
     await equityGrantsFactory.create({ companyInvestorId: companyInvestor.id });
     await dividendsFactory.create({ companyId: company.id, companyInvestorId: companyInvestor.id });
     await convertibleSecuritiesFactory.create({ companyInvestorId: companyInvestor.id });
+    return { company, adminUser, companyInvestor };
+  };
 
-    expectedTabs = [
-      { name: "Shares", href: "?tab=shares" },
-      { name: "Exercises", href: "?tab=exercises" },
-      { name: "Dividends", href: "?tab=dividends" },
-      { name: "Convertibles", href: "?tab=convertibles" },
-      { name: "Options", href: "?tab=options" },
-    ];
-  });
+  const expectTab = async (page: Page, name: string, href: string) => {
+    await expect(page.getByRole("tab", { name })).toBeVisible();
+    await expect(page.getByRole("tab", { name })).toHaveAttribute("href", `?tab=${href}`);
+  };
 
   test("shows the expected tabs for lawyer", async ({ page }) => {
+    const { company, adminUser } = await setup();
     const companyLawyer = (await usersFactory.create()).user;
     await companyLawyersFactory.create({ companyId: company.id, userId: companyLawyer.id });
     await login(page, companyLawyer);
-    await page.goto(`/people/${companyInvestor.externalId}`);
+    await page.goto(`/people/${adminUser.externalId}`);
 
     await expect(page.getByRole("tab", { name: "Details" })).not.toBeVisible();
-    for (const { name, href } of expectedTabs) {
-      await expect(page.getByRole("tab", { name })).toBeVisible();
-      await expect(page.getByRole("tab", { name })).toHaveAttribute("href", href);
-    }
+    for (const { name, href } of expectedTabs) await expectTab(page, name, href);
   });
 
   test("shows the expected tabs for company administrator", async ({ page }) => {
-    await login(page, companyAdmin);
-    await page.goto(`/people/${companyInvestor.externalId}`);
+    const { adminUser } = await setup();
+    await login(page, adminUser);
+    await page.goto(`/people/${adminUser.externalId}`);
 
-    const adminExpectedTabs = [...expectedTabs, { name: "Details", href: "?tab=details" }];
-    for (const { name, href } of adminExpectedTabs) {
-      await expect(page.getByRole("tab", { name })).toBeVisible();
-      await expect(page.getByRole("tab", { name })).toHaveAttribute("href", href);
-    }
+    for (const { name, href } of expectedTabs) await expectTab(page, name, href);
+    await expectTab(page, "Details", "details");
   });
 });
