@@ -13,12 +13,15 @@ import { invoiceStatuses } from "@/db/enums";
 import { invoices } from "@/db/schema";
 
 type User = Awaited<ReturnType<typeof usersFactory.create>>["user"];
+type CompanyContractor = Awaited<ReturnType<typeof companyContractorsFactory.create>>["companyContractor"];
 
 test.describe("Invoice submission, approval and rejection", () => {
   let company: Awaited<ReturnType<typeof companiesFactory.createCompletedOnboarding>>["company"];
   let adminUser: User;
   let workerUserA: User;
   let workerUserB: User;
+  let contractorA: CompanyContractor;
+  let contractorB: CompanyContractor;
 
   test.beforeEach(async () => {
     ({ company, adminUser } = await companiesFactory.createCompletedOnboarding({
@@ -27,22 +30,20 @@ test.describe("Invoice submission, approval and rejection", () => {
     }));
     workerUserA = (await usersFactory.create()).user;
     workerUserB = (await usersFactory.create()).user;
-    await companyContractorsFactory.create({
+    ({ companyContractor: contractorA } = await companyContractorsFactory.create({
       companyId: company.id,
       userId: workerUserA.id,
-      id: workerUserA.id,
-    });
-    await companyContractorsFactory.create({
+    }));
+    ({ companyContractor: contractorB } = await companyContractorsFactory.create({
       companyId: company.id,
       userId: workerUserB.id,
-      id: workerUserB.id,
-    });
+    }));
   });
 
   const createInitialInvoices = async (statusOverrides?: Record<string, (typeof invoiceStatuses)[number]>) => {
     await invoicesFactory.create({
       companyId: company.id,
-      companyContractorId: workerUserA.id,
+      companyContractorId: contractorA.id,
       status: statusOverrides?.["CUSTOM-1"] ?? "received",
       invoiceNumber: "CUSTOM-1",
       invoiceDate: "2024-11-01",
@@ -52,7 +53,7 @@ test.describe("Invoice submission, approval and rejection", () => {
 
     await invoicesFactory.create({
       companyId: company.id,
-      companyContractorId: workerUserA.id,
+      companyContractorId: contractorA.id,
       status: statusOverrides?.["CUSTOM-2"] ?? "received",
       invoiceNumber: "CUSTOM-2",
       invoiceDate: "2024-12-01",
@@ -62,7 +63,7 @@ test.describe("Invoice submission, approval and rejection", () => {
 
     await invoicesFactory.create({
       companyId: company.id,
-      companyContractorId: workerUserB.id,
+      companyContractorId: contractorB.id,
       status: statusOverrides?.["CUSTOM-3"] ?? "received",
       invoiceNumber: "CUSTOM-3",
       invoiceDate: "2024-11-20",
@@ -75,7 +76,7 @@ test.describe("Invoice submission, approval and rejection", () => {
     const { invoice } = await invoicesFactory.create(
       {
         companyId: company.id,
-        companyContractorId: workerUserA.id,
+        companyContractorId: contractorA.id,
         status: "rejected",
         invoiceNumber: "REJECTED-1",
         invoiceDate: "2024-12-01",
@@ -140,7 +141,7 @@ test.describe("Invoice submission, approval and rejection", () => {
         totalAmountInUsdCents: 68300n,
         cashAmountInCents: 68300n,
         companyId: company.id,
-        companyContractorId: workerUserA.id,
+        companyContractorId: contractorA.id,
         userId: workerUserA.id,
       }),
     );
@@ -168,7 +169,7 @@ test.describe("Invoice submission, approval and rejection", () => {
         totalAmountInUsdCents: 2300n,
         cashAmountInCents: 2300n,
         companyId: company.id,
-        companyContractorId: workerUserA.id,
+        companyContractorId: contractorA.id,
         userId: workerUserA.id,
       }),
     );
@@ -256,7 +257,7 @@ test.describe("Invoice submission, approval and rejection", () => {
         totalAmountInUsdCents: 8300n,
         cashAmountInCents: 8300n,
         companyId: company.id,
-        companyContractorId: workerUserA.id,
+        companyContractorId: contractorA.id,
         userId: workerUserA.id,
       }),
     );
@@ -279,7 +280,7 @@ test.describe("Invoice submission, approval and rejection", () => {
         totalAmountInUsdCents: 62300n,
         cashAmountInCents: 62300n,
         companyId: company.id,
-        companyContractorId: workerUserB.id,
+        companyContractorId: contractorB.id,
         userId: workerUserB.id,
       }),
     );
@@ -343,7 +344,7 @@ test.describe("Invoice submission, approval and rejection", () => {
     await db
       .update(invoices)
       .set({ status: "payment_pending" })
-      .where(and(eq(invoices.invoiceNumber, "CUSTOM-1"), eq(invoices.companyContractorId, workerUserA.id)));
+      .where(and(eq(invoices.invoiceNumber, "CUSTOM-1"), eq(invoices.companyContractorId, contractorA.id)));
 
     await expect(locateOpenInvoicesBadge(page)).toContainText("2");
 
